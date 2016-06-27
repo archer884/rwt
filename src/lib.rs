@@ -34,7 +34,7 @@ const BASE_CONFIG: base64::Config = base64::Config {
 
 #[derive(Debug)]
 pub struct Rwt<T> {
-    payload: T,
+    pub payload: T,
     signature: String,
 }
 
