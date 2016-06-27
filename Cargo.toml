@@ -1,0 +1,10 @@
+[package]
+name = "rwt"
+version = "0.1.0"
+authors = ["J/A <archer884@gmail.com>"]
+
+[dependencies]
+rust-crypto = "0.2.0"
+rustc-serialize = "0.3.0"
+serde = "0.7.0"
+serde_json = "0.7.0"
