@@ -52,9 +52,11 @@ impl<T: Serialize> Rwt<T> {
         Ok(format!("{}.{}", body, self.signature))
     }
 
-    pub fn is_valid<S: AsRef<[u8]>>(&self, secret: S) -> Result<bool> {
-        let signature = derive_signature(&self.payload, Sha256::new(), secret.as_ref())?;
-        Ok(self.signature == signature)
+    pub fn is_valid<S: AsRef<[u8]>>(&self, secret: S) -> bool {
+        match derive_signature(&self.payload, Sha256::new(), secret.as_ref()) {
+            Err(_) => false,
+            Ok(signature) => self.signature == signature,
+        }
     }
 }
 
