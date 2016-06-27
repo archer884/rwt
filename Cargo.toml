@@ -1,6 +1,6 @@
 [package]
 name = "rwt"
-version = "0.1.0"
+version = "0.1.1"
 description = "Rebel Web Tokens, similar in form and function to JSON Web Tokens"
 readme = "README.md"
 repository = "https://github.com/archer884/rwt"
