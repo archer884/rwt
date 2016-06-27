@@ -31,5 +31,5 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 [tss]:https://theysaidso.com/api/
 [hyp]:https://github.com/hyperium/hyper
-[apc]:https://github.com/archer884/quoters/blob/master/LICENSE-APACHE
-[mit]:https://github.com/archer884/quoters/blob/master/LICENSE-MIT
+[apc]:https://github.com/archer884/rwt/blob/master/LICENSE-APACHE
+[mit]:https://github.com/archer884/rwt/blob/master/LICENSE-MIT
