@@ -32,7 +32,7 @@ const BASE_CONFIG: base64::Config = base64::Config {
     line_length: None,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Rwt<T> {
     pub payload: T,
     signature: String,
@@ -72,7 +72,7 @@ impl<T: Deserialize> FromStr for Rwt<T> {
             payload: json::from_str(&String::from_utf8(payload.from_base64()?)?)?,
             signature: signature.to_owned(),
         })
-    } 
+    }
 }
 
 fn derive_signature<D, T, S>(payload: &T, digest: D, secret: S) -> Result<String>
@@ -83,4 +83,167 @@ fn derive_signature<D, T, S>(payload: &T, digest: D, secret: S) -> Result<String
     let mut hmac = Hmac::new(digest, secret.as_ref());
     hmac.input(json::to_string(payload)?.as_bytes());
     Ok(hmac.result().code().to_base64(BASE_CONFIG))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Rwt;
+
+    use serde::{
+        Deserialize,
+        Deserializer,
+        Serialize,
+        Serializer,
+    };
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Payload {
+        jti: String,
+        exp: i64,
+    }
+
+    impl Serialize for Payload {
+        fn serialize<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
+            struct Visitor<'a> {
+                value: &'a Payload,
+                state: u8,
+            }
+
+            impl<'a> ::serde::ser::MapVisitor for Visitor<'a> {
+                fn visit<S: Serializer>(&mut self, s: &mut S) -> Result<Option<()>, S::Error> {
+                    match self.state {
+                        0 => {
+                            self.state += 1;
+                            Ok(Some(s.serialize_struct_elt("jti", &self.value.jti)?))
+                        },
+                        1 => {
+                            self.state += 1;
+                            Ok(Some(s.serialize_struct_elt("exp", &self.value.exp)?))
+                        },
+                        _ => {
+                            Ok(None)
+                        }
+                    }
+                }
+            }
+
+            s.serialize_struct("Payload", Visitor {
+                value: self,
+                state: 0,
+            })
+        }
+    }
+
+    impl Deserialize for Payload {
+        fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
+            enum Field {
+                Jti,
+                Exp,
+                Unmapped,
+            }
+
+            impl Deserialize for Field {
+                fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
+                    struct FieldVisitor;
+
+                    impl ::serde::de::Visitor for FieldVisitor {
+                        type Value = Field;
+
+                        fn visit_str<E: ::serde::de::Error>(&mut self, value: &str) -> Result<Field, E> {
+                            match value {
+                                "jti" => Ok(Field::Jti),
+                                "exp" => Ok(Field::Exp),
+
+                                // In the event we receive an undesired field, we return `Unmapped` because,
+                                // even though we don't really care about this field, this is not an error.
+                                _ => Ok(Field::Unmapped),
+                                
+                                // It is also possible to throw an error in this case, e.g.:
+                                // Err(::serde::de::Error::custom("unexpected field"))
+                            }
+                        }
+                    }
+
+                    d.deserialize(FieldVisitor)
+                }
+            }
+            
+            struct PayloadVisitor;
+
+            impl ::serde::de::Visitor for PayloadVisitor {
+                type Value = Payload;
+
+                fn visit_map<V: ::serde::de::MapVisitor>(&mut self, mut visitor: V) -> Result<Self::Value, V::Error> {
+                    let mut jti = None;
+                    let mut exp = None;
+
+                    loop {
+                        match visitor.visit_key()? {
+                            Some(Field::Jti) => { jti = visitor.visit_value()?; },
+                            Some(Field::Exp) => { exp = visitor.visit_value()?; },
+                            Some(Field::Unmapped) => (),
+                            None => { break; }
+                        }
+                    }
+
+                    let jti = match jti {
+                        None => visitor.missing_field("jti")?,
+                        Some(jti) => jti,
+                    };
+
+                    let exp =  match exp {
+                        None => visitor.missing_field("exp")?,
+                        Some(exp) => exp,
+                    };
+
+                    visitor.end()?;
+
+                    Ok(Payload {
+                        jti: jti,
+                        exp: exp,
+                    })
+                }
+            }
+
+            static FIELDS: &'static [&'static str] = &["jti", "exp"];
+            d.deserialize_struct("Payload", FIELDS, PayloadVisitor)
+        }
+    }
+
+    #[test]
+    fn create_rwt_with_payload() {
+        create_rwt();
+    }
+
+    #[test]
+    fn validate_rwt() {
+        let rwt = create_rwt();
+        assert!(rwt.is_valid("secret"));
+    }
+
+    #[test]
+    fn invalidate_rwt() {
+        let rwt = create_rwt();
+        assert!(!rwt.is_valid("other secret"));
+    }
+
+    #[test]
+    fn serialize_rwt() {
+        let rwt = create_rwt();
+        assert_eq!("eyJqdGkiOiJ0aGlzIG9uZSIsImV4cCI6MTN9.Ir9W3KCkyGNmsPFURs4Sj7aQSkuvcqpQ7kTk4F6wCyU", rwt.encode().unwrap());
+    }
+
+    #[test]
+    fn deserialize_rwt() {
+        let rwt = create_rwt().encode().unwrap();
+        let rwt: Rwt<Payload> = rwt.parse().unwrap();
+        assert_eq!(rwt, create_rwt());
+    }
+
+    fn create_rwt() -> Rwt<Payload> {
+        Rwt::with_payload(Payload {
+            jti: "this one".to_owned(),
+            exp: 13,
+        }, "secret").unwrap()
+    }
 }
