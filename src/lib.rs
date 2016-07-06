@@ -32,7 +32,7 @@ const BASE_CONFIG: base64::Config = base64::Config {
     line_length: None,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Rwt<T> {
     pub payload: T,
     signature: String,
