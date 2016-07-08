@@ -13,6 +13,9 @@ tl;dr: **kitchen sink not included.**
  - Refuses to waste bits on JWT headers
  - Gives no fucks
 
+## Updates
+ - 0.2.1 `Rwt` struct is now `Eq` and `PartialEq`. This is primarily to support testing; whether this has any real purpose for the end user is a mystery to me.
+
 ## Roadmap
  - Allow algorithm selection
 
