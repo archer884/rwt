@@ -104,33 +104,15 @@ mod tests {
 
     impl Serialize for Payload {
         fn serialize<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
-            struct Visitor<'a> {
-                value: &'a Payload,
-                state: u8,
-            }
+            let mut map_state = s.serialize_map(Some(2))?;
+            
+            s.serialize_map_key(&mut map_state, "jti")?;
+            s.serialize_map_value(&mut map_state, &self.jti)?;
 
-            impl<'a> ::serde::ser::MapVisitor for Visitor<'a> {
-                fn visit<S: Serializer>(&mut self, s: &mut S) -> Result<Option<()>, S::Error> {
-                    match self.state {
-                        0 => {
-                            self.state += 1;
-                            Ok(Some(s.serialize_struct_elt("jti", &self.value.jti)?))
-                        },
-                        1 => {
-                            self.state += 1;
-                            Ok(Some(s.serialize_struct_elt("exp", &self.value.exp)?))
-                        },
-                        _ => {
-                            Ok(None)
-                        }
-                    }
-                }
-            }
+            s.serialize_map_key(&mut map_state, "exp")?;
+            s.serialize_map_value(&mut map_state, &self.exp)?;
 
-            s.serialize_struct("Payload", Visitor {
-                value: self,
-                state: 0,
-            })
+            s.serialize_map_end(map_state)
         }
     }
 
