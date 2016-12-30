@@ -15,13 +15,7 @@ use serde::{Serialize, Deserialize};
 use serde_json as json;
 use std::str::FromStr;
 
-use rustc_serialize::base64::{
-    self,
-    CharacterSet,
-    FromBase64,
-    Newline,
-    ToBase64,
-};
+use rustc_serialize::base64::{self, CharacterSet, FromBase64, Newline, ToBase64};
 
 const BASE_CONFIG: base64::Config = base64::Config {
     char_set: CharacterSet::Standard,
@@ -53,7 +47,9 @@ impl<T: Serialize> Rwt<T> {
     pub fn is_valid<S: AsRef<[u8]>>(&self, secret: S) -> bool {
         match derive_signature(&self.payload, Sha256::new(), secret.as_ref()) {
             Err(_) => false,
-            Ok(signature) => self.signature == signature,
+            Ok(signature) => {
+                crypto::util::fixed_time_eq(self.signature.as_bytes(), signature.as_bytes())
+            }
         }
     }
 }
@@ -64,7 +60,8 @@ impl<T: Deserialize> FromStr for Rwt<T> {
     fn from_str(s: &str) -> Result<Self> {
         let mut parts = s.split(".");
         let payload = parts.next().ok_or(RwtError::Format(format!("Missing body: {:?}", s)))?;
-        let signature = parts.next().ok_or(RwtError::Format(format!("Missing signature: {:?}", s)))?;
+        let signature = parts.next()
+            .ok_or(RwtError::Format(format!("Missing signature: {:?}", s)))?;
 
         Ok(Rwt {
             payload: json::from_str(&String::from_utf8(payload.from_base64()?)?)?,
@@ -76,7 +73,7 @@ impl<T: Deserialize> FromStr for Rwt<T> {
 fn derive_signature<D, T, S>(payload: &T, digest: D, secret: S) -> Result<String>
     where T: Serialize,
           D: Digest,
-          S: AsRef<[u8]>,
+          S: AsRef<[u8]>
 {
     let mut hmac = Hmac::new(digest, secret.as_ref());
     hmac.input(json::to_string(payload)?.as_bytes());
@@ -87,12 +84,7 @@ fn derive_signature<D, T, S>(payload: &T, digest: D, secret: S) -> Result<String
 mod tests {
     use super::Rwt;
 
-    use serde::{
-        Deserialize,
-        Deserializer,
-        Serialize,
-        Serializer,
-    };
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Debug, Eq, PartialEq)]
     struct Payload {
@@ -103,7 +95,7 @@ mod tests {
     impl Serialize for Payload {
         fn serialize<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
             let mut map_state = s.serialize_map(Some(2))?;
-            
+
             s.serialize_map_key(&mut map_state, "jti")?;
             s.serialize_map_value(&mut map_state, &self.jti)?;
 
@@ -129,7 +121,9 @@ mod tests {
                     impl ::serde::de::Visitor for FieldVisitor {
                         type Value = Field;
 
-                        fn visit_str<E: ::serde::de::Error>(&mut self, value: &str) -> Result<Field, E> {
+                        fn visit_str<E: ::serde::de::Error>(&mut self,
+                                                            value: &str)
+                                                            -> Result<Field, E> {
                             match value {
                                 "jti" => Ok(Field::Jti),
                                 "exp" => Ok(Field::Exp),
@@ -137,7 +131,7 @@ mod tests {
                                 // In the event we receive an undesired field, we return `Unmapped` because,
                                 // even though we don't really care about this field, this is not an error.
                                 _ => Ok(Field::Unmapped),
-                                
+
                                 // It is also possible to throw an error in this case, e.g.:
                                 // Err(::serde::de::Error::custom("unexpected field"))
                             }
@@ -147,22 +141,30 @@ mod tests {
                     d.deserialize(FieldVisitor)
                 }
             }
-            
+
             struct PayloadVisitor;
 
             impl ::serde::de::Visitor for PayloadVisitor {
                 type Value = Payload;
 
-                fn visit_map<V: ::serde::de::MapVisitor>(&mut self, mut visitor: V) -> Result<Self::Value, V::Error> {
+                fn visit_map<V: ::serde::de::MapVisitor>(&mut self,
+                                                         mut visitor: V)
+                                                         -> Result<Self::Value, V::Error> {
                     let mut jti = None;
                     let mut exp = None;
 
                     loop {
                         match visitor.visit_key()? {
-                            Some(Field::Jti) => { jti = visitor.visit_value()?; },
-                            Some(Field::Exp) => { exp = visitor.visit_value()?; },
+                            Some(Field::Jti) => {
+                                jti = visitor.visit_value()?;
+                            }
+                            Some(Field::Exp) => {
+                                exp = visitor.visit_value()?;
+                            }
                             Some(Field::Unmapped) => (),
-                            None => { break; }
+                            None => {
+                                break;
+                            }
                         }
                     }
 
@@ -171,7 +173,7 @@ mod tests {
                         Some(jti) => jti,
                     };
 
-                    let exp =  match exp {
+                    let exp = match exp {
                         None => visitor.missing_field("exp")?,
                         Some(exp) => exp,
                     };
@@ -210,7 +212,9 @@ mod tests {
     #[test]
     fn serialize_rwt() {
         let rwt = create_rwt();
-        assert_eq!("eyJqdGkiOiJ0aGlzIG9uZSIsImV4cCI6MTN9.Ir9W3KCkyGNmsPFURs4Sj7aQSkuvcqpQ7kTk4F6wCyU", rwt.encode().unwrap());
+        assert_eq!("eyJqdGkiOiJ0aGlzIG9uZSIsImV4cCI6MTN9.\
+                    Ir9W3KCkyGNmsPFURs4Sj7aQSkuvcqpQ7kTk4F6wCyU",
+                   rwt.encode().unwrap());
     }
 
     #[test]
@@ -222,8 +226,10 @@ mod tests {
 
     fn create_rwt() -> Rwt<Payload> {
         Rwt::with_payload(Payload {
-            jti: "this one".to_owned(),
-            exp: 13,
-        }, "secret").unwrap()
+                              jti: "this one".to_owned(),
+                              exp: 13,
+                          },
+                          "secret")
+            .unwrap()
     }
 }
