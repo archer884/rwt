@@ -1,5 +1,3 @@
-#![feature(box_syntax, question_mark)]
-
 extern crate crypto;
 extern crate rustc_serialize;
 extern crate serde;
