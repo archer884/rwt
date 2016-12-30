@@ -15,7 +15,7 @@ tl;dr: **kitchen sink not included.**
 
 ## Updates
  - 0.2.1 `Rwt` struct is now `Eq` and `PartialEq`. This is primarily to support testing; whether this has any real purpose for the end user is a mystery to me.
- - 0.2.3 In order to avoid a potential timing attack vector, we now use `crypto::util::fixed_time_eq` to validate token signatures. Props to @Philipp91 for that.
+ - 0.2.3 In order to avoid a potential timing attack vector, we now use `crypto::util::fixed_time_eq` to validate token signatures. Props to [@Philipp91](https://github.com/Philipp91) for that.
 
 ## Roadmap
  - Allow algorithm selection
