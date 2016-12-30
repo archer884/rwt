@@ -3,7 +3,7 @@ For a lot of reasons, I'm not a huge fan of just going into a package manager an
 
 ...In this case, what I have a problem with is the idea that I should be including a header in a JWT that tells me what algorithm to use to decode it. I *know* the algorithm, guys; it's *my application* and I'm the one who *made the token.* Be reasonable.
 
-I'm also not a huge fan of any of the existing Rust implementations of JWT in that they all seem rather opinionated as to what my payload should be. That doesn't make sense to me, either, so I didn't do that here. Actually, I don't do much at all, and that's pretty easy to see: there are only 118 lines of code in this library, and I wanna say 50 of those are dedicated to converting various other libraries' errors into my own.
+I'm also not a huge fan of any of the existing Rust implementations of JWT in that they all seem rather opinionated as to what my payload should be. That doesn't make sense to me, either, so I didn't do that here. Actually, I don't do much at all, and that's pretty easy to see: there were originally only 118 lines of code in this library, and I wanna say 50 of those were dedicated to converting various other libraries' errors into my own.
 
 tl;dr: **kitchen sink not included.**
 
@@ -15,6 +15,7 @@ tl;dr: **kitchen sink not included.**
 
 ## Updates
  - 0.2.1 `Rwt` struct is now `Eq` and `PartialEq`. This is primarily to support testing; whether this has any real purpose for the end user is a mystery to me.
+ - 0.2.3 In order to avoid a potential timing attack vector, we now use `crypto::util::fixed_time_eq` to validate token signatures. Props to @Philipp91 for that.
 
 ## Roadmap
  - Allow algorithm selection
