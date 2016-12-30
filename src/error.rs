@@ -38,18 +38,18 @@ impl Error for RwtError {
 
 impl From<Base64Error> for RwtError {
     fn from(error: Base64Error) -> Self {
-        RwtError::Base64(box error)
+        RwtError::Base64(Box::new(error))
     }
 }
 
 impl From<EncodingError> for RwtError {
     fn from(error: EncodingError) -> Self {
-        RwtError::Encoding(box error)
+        RwtError::Encoding(Box::new(error))
     }
 }
 
 impl From<JsonError> for RwtError {
     fn from(error: JsonError) -> Self {
-        RwtError::Json(box error)
+        RwtError::Json(Box::new(error))
     }
 }
