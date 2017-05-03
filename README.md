@@ -11,24 +11,28 @@ I'm also not a huge fan of any of the existing Rust implementations of JWT in th
 tl;dr: **kitchen sink not included.**
 
 ## Features
- - Serializes and signs any payload implementing `serde::ser::Serialize`
- - Deserializes and validates any payload implementing `serde::de::Deserialize`
- - Refuses to waste bits on JWT headers
- - Gives no fucks
+
+* Serializes and signs any payload implementing `serde::ser::Serialize`
+* Deserializes and validates any payload implementing `serde::de::Deserialize`
+* Refuses to waste bits on JWT headers
+* Gives no fucks
 
 ## Updates
- - 0.2.1 `Rwt` struct is now `Eq` and `PartialEq`. This is primarily to support testing; whether this has any real purpose for the end user is a mystery to me.
- - 0.2.3 In order to avoid a potential timing attack vector, we now use `crypto::util::fixed_time_eq` to validate token signatures. Props to [@Philipp91](https://github.com/Philipp91) for that.
+
+* 0.3.0 First off, this library has been updated to support a modern version of `serde` (i.e. 1.0), with some changes to the API as a result. Among other things, `FromStr` is now implemented for payloads that also implement `FromStr` instead of for payloads that directly implement `Deserialize`. Additionally, `Rwt(T)` now directly implements `Serialize` and `Deserialize` for any T which does the same. Documentation has been added. Lastly, I have reformatted this list and decided that the most recent changes should be at the top.
+* 0.2.3 In order to avoid a potential timing attack vector, we now use `crypto::util::fixed_time_eq` to validate token signatures. Props to [@Philipp91](https://github.com/Philipp91) for that.
+* 0.2.1 `Rwt` struct is now `Eq` and `PartialEq`. This is primarily to support testing; whether this has any real purpose for the end user is a mystery to me.
 
 ## Roadmap
- - Allow algorithm selection
+
+- Allow algorithm selection
 
 ## License
 
 Licensed under either of
 
- * Apache License, Version 2.0, ([LICENSE-APACHE][apc] or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT][mit] or http://opensource.org/licenses/MIT)
+* Apache License, Version 2.0, ([LICENSE-APACHE][apc] or http://www.apache.org/licenses/LICENSE-2.0)
+* MIT license ([LICENSE-MIT][mit] or http://opensource.org/licenses/MIT)
 
 at your option.
 
