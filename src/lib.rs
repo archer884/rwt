@@ -1,5 +1,8 @@
+#[macro_use]
+extern crate serde_derive;
+
+extern crate base64;
 extern crate crypto;
-extern crate rustc_serialize;
 extern crate serde;
 extern crate serde_json;
 
@@ -7,30 +10,44 @@ mod error;
 
 pub use error::{Result, RwtError};
 
+/// Decode base64 into a string.
+///
+/// Useful for converting incoming base64 tokens to json before deserializing. It is now necessary
+/// to do this, as far as I can tell, because serde now supports deserializing to a struct that
+/// only borrows the data it represents instead of owning it.
+pub fn decode_base64(s: &str) -> Option<String> {
+    let start_idx = match s.find('.').map(|idx| idx + 1) {
+        None => return None,
+        Some(idx) => idx,
+    };
+
+    let s = &s[start_idx..];
+    base64::decode(s).ok().and_then(|bytes| String::from_utf8(bytes).ok())
+}
+
 use crypto::digest::Digest;
 use crypto::hmac::Hmac;
 use crypto::mac::Mac;
 use crypto::sha2::Sha256;
-use serde::{Serialize, Deserialize};
 use serde_json as json;
+use serde::Serialize;
+use std::fmt::Display;
 use std::str::FromStr;
 
-use rustc_serialize::base64::{self, CharacterSet, FromBase64, Newline, ToBase64};
-
-const BASE_CONFIG: base64::Config = base64::Config {
-    char_set: CharacterSet::Standard,
-    newline: Newline::LF,
-    pad: false,
-    line_length: None,
-};
-
-#[derive(Debug, Eq, PartialEq)]
+/// Represents a web token.
+///
+/// For optimal usage, your payload should be any struct implementing `Serialize`, `Deserialize`,
+/// and `FromStr`, but none of these are technically required.
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Rwt<T> {
     pub payload: T,
     signature: String,
 }
 
 impl<T: Serialize> Rwt<T> {
+    /// Create a web token with the provided payload.
+    ///
+    /// This function requires that the payload be `Serialize`.
     pub fn with_payload<S: AsRef<[u8]>>(payload: T, secret: S) -> Result<Rwt<T>> {
         let signature = derive_signature(&payload, Sha256::new(), secret.as_ref())?;
         Ok(Rwt {
@@ -39,11 +56,21 @@ impl<T: Serialize> Rwt<T> {
         })
     }
 
+    /// Encode the token as base64 in the usual format.
+    ///
+    /// In this case, "the usual format" means `xxx.xxx` where the left hand side is the token
+    /// itself and the right hand side is the signature. The base64 implementation used currently
+    /// introduces padding into the equation.
     pub fn encode(&self) -> Result<String> {
-        let body = json::to_string(&self.payload)?.as_bytes().to_base64(BASE_CONFIG);
+        let body = base64::encode(json::to_string(&self.payload)?.as_bytes());
         Ok(format!("{}.{}", body, self.signature))
     }
 
+    /// Validate the token.
+    ///
+    /// This function compares the token as serialized against a freshly-derived signature to
+    /// ensure that it is original and un-tampered-with. This version uses `rust-crypto` to
+    /// compare the two results in order to protect against timing attacks.
     pub fn is_valid<S: AsRef<[u8]>>(&self, secret: S) -> bool {
         match derive_signature(&self.payload, Sha256::new(), secret.as_ref()) {
             Err(_) => false,
@@ -54,17 +81,27 @@ impl<T: Serialize> Rwt<T> {
     }
 }
 
-impl<T: Deserialize> FromStr for Rwt<T> {
+impl<T, E> FromStr for Rwt<T>
+    where E: Display,
+          T: FromStr<Err = E>
+{
     type Err = RwtError;
 
     fn from_str(s: &str) -> Result<Self> {
-        let mut parts = s.split(".");
-        let payload = parts.next().ok_or(RwtError::Format(format!("Missing body: {:?}", s)))?;
+        use std::str;
+
+        let mut parts = s.split('.');
+        let payload = parts.next().ok_or_else(|| RwtError::Format(format!("Missing body: {:?}", s)))?;
         let signature = parts.next()
-            .ok_or(RwtError::Format(format!("Missing signature: {:?}", s)))?;
+            .ok_or_else(|| RwtError::Format(format!("Missing signature: {:?}", s)))?;
+
+        let payload = base64::decode(payload)?;
+        let payload = str::from_utf8(&payload)?;
+        let payload = payload.parse::<T>()
+            .map_err(|e| RwtError::FromStr(format!("Unable to parse body as payload: {}", e)))?;
 
         Ok(Rwt {
-            payload: json::from_str(&String::from_utf8(payload.from_base64()?)?)?,
+            payload: payload,
             signature: signature.to_owned(),
         })
     }
@@ -77,118 +114,26 @@ fn derive_signature<D, T, S>(payload: &T, digest: D, secret: S) -> Result<String
 {
     let mut hmac = Hmac::new(digest, secret.as_ref());
     hmac.input(json::to_string(payload)?.as_bytes());
-    Ok(hmac.result().code().to_base64(BASE_CONFIG))
+    Ok(base64::encode(hmac.result().code()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::Rwt;
+    use serde_json;
+    use std::str::FromStr;
 
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
     struct Payload {
         jti: String,
         exp: i64,
     }
 
-    impl Serialize for Payload {
-        fn serialize<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
-            let mut map_state = s.serialize_map(Some(2))?;
+    impl FromStr for Payload {
+        type Err = &'static str;
 
-            s.serialize_map_key(&mut map_state, "jti")?;
-            s.serialize_map_value(&mut map_state, &self.jti)?;
-
-            s.serialize_map_key(&mut map_state, "exp")?;
-            s.serialize_map_value(&mut map_state, &self.exp)?;
-
-            s.serialize_map_end(map_state)
-        }
-    }
-
-    impl Deserialize for Payload {
-        fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
-            enum Field {
-                Jti,
-                Exp,
-                Unmapped,
-            }
-
-            impl Deserialize for Field {
-                fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
-                    struct FieldVisitor;
-
-                    impl ::serde::de::Visitor for FieldVisitor {
-                        type Value = Field;
-
-                        fn visit_str<E: ::serde::de::Error>(&mut self,
-                                                            value: &str)
-                                                            -> Result<Field, E> {
-                            match value {
-                                "jti" => Ok(Field::Jti),
-                                "exp" => Ok(Field::Exp),
-
-                                // In the event we receive an undesired field, we return `Unmapped` because,
-                                // even though we don't really care about this field, this is not an error.
-                                _ => Ok(Field::Unmapped),
-
-                                // It is also possible to throw an error in this case, e.g.:
-                                // Err(::serde::de::Error::custom("unexpected field"))
-                            }
-                        }
-                    }
-
-                    d.deserialize(FieldVisitor)
-                }
-            }
-
-            struct PayloadVisitor;
-
-            impl ::serde::de::Visitor for PayloadVisitor {
-                type Value = Payload;
-
-                fn visit_map<V: ::serde::de::MapVisitor>(&mut self,
-                                                         mut visitor: V)
-                                                         -> Result<Self::Value, V::Error> {
-                    let mut jti = None;
-                    let mut exp = None;
-
-                    loop {
-                        match visitor.visit_key()? {
-                            Some(Field::Jti) => {
-                                jti = visitor.visit_value()?;
-                            }
-                            Some(Field::Exp) => {
-                                exp = visitor.visit_value()?;
-                            }
-                            Some(Field::Unmapped) => (),
-                            None => {
-                                break;
-                            }
-                        }
-                    }
-
-                    let jti = match jti {
-                        None => visitor.missing_field("jti")?,
-                        Some(jti) => jti,
-                    };
-
-                    let exp = match exp {
-                        None => visitor.missing_field("exp")?,
-                        Some(exp) => exp,
-                    };
-
-                    visitor.end()?;
-
-                    Ok(Payload {
-                        jti: jti,
-                        exp: exp,
-                    })
-                }
-            }
-
-            static FIELDS: &'static [&'static str] = &["jti", "exp"];
-            d.deserialize_struct("Payload", FIELDS, PayloadVisitor)
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            serde_json::from_str(s).map_err(|_| "Sorry, Charlie.")
         }
     }
 
@@ -213,14 +158,14 @@ mod tests {
     fn serialize_rwt() {
         let rwt = create_rwt();
         assert_eq!("eyJqdGkiOiJ0aGlzIG9uZSIsImV4cCI6MTN9.\
-                    Ir9W3KCkyGNmsPFURs4Sj7aQSkuvcqpQ7kTk4F6wCyU",
+                    Ir9W3KCkyGNmsPFURs4Sj7aQSkuvcqpQ7kTk4F6wCyU=",
                    rwt.encode().unwrap());
     }
 
     #[test]
     fn deserialize_rwt() {
         let rwt = create_rwt().encode().unwrap();
-        let rwt: Rwt<Payload> = rwt.parse().unwrap();
+        let rwt = rwt.parse::<Rwt<Payload>>().unwrap();
         assert_eq!(rwt, create_rwt());
     }
 
