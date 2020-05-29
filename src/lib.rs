@@ -1,14 +1,17 @@
-#[macro_use]
-extern crate serde_derive;
-
-extern crate base64;
-extern crate crypto;
-extern crate serde;
-extern crate serde_json;
-
 mod error;
 
-pub use error::{Result, RwtError};
+use crypto::digest::Digest;
+use crypto::hmac::Hmac;
+use crypto::mac::Mac;
+use crypto::sha2::Sha256;
+use serde::{Deserialize, Serialize};
+use serde_json as json;
+use std::fmt::Display;
+use std::str::FromStr;
+
+pub use error::Error;
+
+pub type Result<T, E = error::Error> = std::result::Result<T, E>;
 
 /// Decode base64 into a string.
 ///
@@ -22,17 +25,10 @@ pub fn decode_base64(s: &str) -> Option<String> {
     };
 
     let s = &s[start_idx..];
-    base64::decode(s).ok().and_then(|bytes| String::from_utf8(bytes).ok())
+    base64::decode(s)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
 }
-
-use crypto::digest::Digest;
-use crypto::hmac::Hmac;
-use crypto::mac::Mac;
-use crypto::sha2::Sha256;
-use serde_json as json;
-use serde::Serialize;
-use std::fmt::Display;
-use std::str::FromStr;
 
 /// Represents a web token.
 ///
@@ -82,23 +78,28 @@ impl<T: Serialize> Rwt<T> {
 }
 
 impl<T, E> FromStr for Rwt<T>
-    where E: Display,
-          T: FromStr<Err = E>
+where
+    E: Display,
+    T: FromStr<Err = E>,
 {
-    type Err = RwtError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
         use std::str;
 
         let mut parts = s.split('.');
-        let payload = parts.next().ok_or_else(|| RwtError::Format(format!("Missing body: {:?}", s)))?;
-        let signature = parts.next()
-            .ok_or_else(|| RwtError::Format(format!("Missing signature: {:?}", s)))?;
+        let payload = parts
+            .next()
+            .ok_or_else(|| Error::Format(format!("Missing body: {:?}", s)))?;
+        let signature = parts
+            .next()
+            .ok_or_else(|| Error::Format(format!("Missing signature: {:?}", s)))?;
 
         let payload = base64::decode(payload)?;
         let payload = str::from_utf8(&payload)?;
-        let payload = payload.parse::<T>()
-            .map_err(|e| RwtError::FromStr(format!("Unable to parse body as payload: {}", e)))?;
+        let payload = payload
+            .parse::<T>()
+            .map_err(|e| Error::FromStr(format!("Unable to parse body as payload: {}", e)))?;
 
         Ok(Rwt {
             payload: payload,
@@ -108,9 +109,10 @@ impl<T, E> FromStr for Rwt<T>
 }
 
 fn derive_signature<D, T, S>(payload: &T, digest: D, secret: S) -> Result<String>
-    where T: Serialize,
-          D: Digest,
-          S: AsRef<[u8]>
+where
+    T: Serialize,
+    D: Digest,
+    S: AsRef<[u8]>,
 {
     let mut hmac = Hmac::new(digest, secret.as_ref());
     hmac.input(json::to_string(payload)?.as_bytes());
@@ -120,10 +122,11 @@ fn derive_signature<D, T, S>(payload: &T, digest: D, secret: S) -> Result<String
 #[cfg(test)]
 mod tests {
     use super::Rwt;
+    use serde::{Deserialize, Serialize};
     use serde_json;
     use std::str::FromStr;
 
-    #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
     struct Payload {
         jti: String,
         exp: i64,
@@ -157,9 +160,11 @@ mod tests {
     #[test]
     fn serialize_rwt() {
         let rwt = create_rwt();
-        assert_eq!("eyJqdGkiOiJ0aGlzIG9uZSIsImV4cCI6MTN9.\
+        assert_eq!(
+            "eyJqdGkiOiJ0aGlzIG9uZSIsImV4cCI6MTN9.\
                     Ir9W3KCkyGNmsPFURs4Sj7aQSkuvcqpQ7kTk4F6wCyU=",
-                   rwt.encode().unwrap());
+            rwt.encode().unwrap()
+        );
     }
 
     #[test]
@@ -170,11 +175,13 @@ mod tests {
     }
 
     fn create_rwt() -> Rwt<Payload> {
-        Rwt::with_payload(Payload {
-                              jti: "this one".to_owned(),
-                              exp: 13,
-                          },
-                          "secret")
-            .unwrap()
+        Rwt::with_payload(
+            Payload {
+                jti: "this one".to_owned(),
+                exp: 13,
+            },
+            "secret",
+        )
+        .unwrap()
     }
 }
